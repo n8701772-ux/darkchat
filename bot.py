@@ -2,10 +2,9 @@
 import os
 import logging
 import json
-import random
 import asyncio
 from asyncio import start_server
-from datetime import datetime, timedelta
+from datetime import datetime
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, 
     ReplyKeyboardMarkup, LabeledPrice
@@ -44,68 +43,50 @@ def save_json(filepath, data):
 
 def load_users(): return load_json(USERS_FILE, {})
 def save_users(users): save_json(USERS_FILE, users)
-
 def load_pairs(): return load_json(PAIRS_FILE, {})
 def save_pairs(pairs): save_json(PAIRS_FILE, pairs)
-
-def load_queue(): return load_json(QUEUE_FILE, [])
+def load_queue(): 
+    q = load_json(QUEUE_FILE, [])
+    # Очистка старой очереди, если там остались просто ID вместо словарей
+    if q and isinstance(q[0], str): return []
+    return q
 def save_queue(queue): save_json(QUEUE_FILE, queue)
 
 # ==================== КЛАВИАТУРЫ ====================
 def get_main_keyboard():
     return ReplyKeyboardMarkup([
         ["/search 🔍 Найти собеседника", "/stop ⏹ Остановить диалог"],
-        ["/profile 👤 Мой профиль", "/premium ⭐ Премиум"],
-        ["/referrals 👥 Рефералы", "/games 🎮 Игры"],
-        ["/support 📞 Поддержка", "/about ℹ️ О чате"]
+        ["/profile 👤 Мой профиль", "/game 🎮 Играть с собеседником"],
+        ["/referrals 👥 Рефералы", "/donate 💖 Поддержать создателей"],
+        ["/about ℹ️ О чате"]
     ], resize_keyboard=True)
 
-def games_menu():
+def gender_setup_kb():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Крестики-нолики", callback_data="game_tic")],
-        [InlineKeyboardButton("🎰 Рулетка", callback_data="game_roulette")],
-        [InlineKeyboardButton("🎲 Угадай число", callback_data="game_number")]
+        [InlineKeyboardButton("👨 Я Парень", callback_data="setgen_M"),
+         InlineKeyboardButton("👩 Я Девушка", callback_data="setgen_F")]
     ])
 
-def premium_menu():
+def search_preferences_kb():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⭐ Купить Premium за 50 ⭐", callback_data="buy_premium")],
-        [InlineKeyboardButton("💳 Пополнить баланс (Telegram Stars)", callback_data="topup_balance")]
+        [InlineKeyboardButton("👨 Парня", callback_data="look_M"),
+         InlineKeyboardButton("👩 Девушку", callback_data="look_F")],
+        [InlineKeyboardButton("🎲 Без разницы", callback_data="look_any")]
     ])
 
-# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ИГР ====================
-def check_win(board, player):
-    win_combinations = [[0,1,2], [3,4,5], [6,7,8], [0,3,6], [1,4,7], [2,5,8], [0,4,8], [2,4,6]]
-    return any(all(board[i] == player for i in combo) for combo in win_combinations)
+def donate_kb():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⭐ 50 Stars", callback_data="donate_50"),
+         InlineKeyboardButton("⭐ 100 Stars", callback_data="donate_100")],
+        [InlineKeyboardButton("⭐ 250 Stars", callback_data="donate_250"),
+         InlineKeyboardButton("⭐ 500 Stars", callback_data="donate_500")]
+    ])
 
-def get_best_move(board):
-    for player in ['O', 'X']:
-        for i in range(9):
-            if board[i] == ' ':
-                board_copy = board.copy()
-                board_copy[i] = player
-                if check_win(board_copy, player):
-                    return i
-    for i in range(9):
-        if board[i] == ' ':
-            return i
-    return None
-
-def tic_tac_toe_board(board, game_id):
-    keyboard = []
-    for i in range(0, 9, 3):
-        row = []
-        for j in range(3):
-            cell = board[i+j]
-            if cell == ' ':
-                row.append(InlineKeyboardButton("⬜", callback_data=f"tic_{game_id}_{i+j}"))
-            elif cell == 'X':
-                row.append(InlineKeyboardButton("❌", callback_data=f"tic_none"))
-            else:
-                row.append(InlineKeyboardButton("⭕", callback_data=f"tic_none"))
-        keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("🔙 В игры", callback_data="back_games")])
-    return InlineKeyboardMarkup(keyboard)
+def chat_games_kb():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎲 Бросить кубики", callback_data="chatgame_dice")],
+        [InlineKeyboardButton("🎯 Сыграть в Дартс", callback_data="chatgame_darts")]
+    ])
 
 # ==================== ОБРАБОТЧИКИ КОМАНД ====================
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,9 +97,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users[user_id] = {
             "name": update.effective_user.first_name,
             "username": update.effective_user.username or "Без ника",
-            "premium": False,
-            "premium_until": "none",
-            "stars": 0,
+            "gender": "none",
+            "donated": 0,
             "referrals": 0,
             "register_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
@@ -126,47 +106,32 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = (
         f"🌑 <b>ДОБРО ПОЖАЛОВАТЬ В DARK ANON CHAT!</b>\n\n"
-        f"🔮 <i>Анонимный чат без границ.</i>\n\n"
-        f"Используй удобное меню кнопками ниже для управления ботом!"
+        f"🔮 <i>Анонимный чат с умным поиском.</i>\n\n"
+        f"Используй меню ниже для управления ботом!"
     )
     await update.message.reply_text(text, parse_mode="HTML", reply_markup=get_main_keyboard())
 
 async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
+    users = load_users()
     pairs = load_pairs()
     queue = load_queue()
+    user = users.get(user_id, {})
     
     if user_id in pairs:
         await update.message.reply_text("⚠️ Вы уже в диалоге! Сначала завершите его командой /stop")
         return
-
-    if user_id in queue:
+    if any(q['id'] == user_id for q in queue):
         await update.message.reply_text("🔍 Вы уже в очереди поиска. Пожалуйста, подождите...")
         return
 
-    queue = [uid for uid in queue if uid not in pairs]
+    # Если пол не установлен
+    if user.get("gender", "none") == "none":
+        await update.message.reply_text("❗️ <b>Для начала поиска укажите ваш пол:</b>", parse_mode="HTML", reply_markup=gender_setup_kb())
+        return
 
-    if len(queue) > 0:
-        partner_id = queue.pop(0)
-        if partner_id == user_id:
-            queue.append(user_id)
-            save_queue(queue)
-            return
-
-        pairs[user_id] = partner_id
-        pairs[partner_id] = user_id
-        save_pairs(pairs)
-        save_queue(queue)
-        
-        success_msg = "🔮 <b>Собеседник найден! Приятного общения.</b>\nЗакончить диалог можно через кнопку /stop"
-        await update.message.reply_text(success_msg, parse_mode="HTML", reply_markup=get_main_keyboard())
-        try:
-            await context.bot.send_message(chat_id=partner_id, text=success_msg, parse_mode="HTML", reply_markup=get_main_keyboard())
-        except: pass
-    else:
-        queue.append(user_id)
-        save_queue(queue)
-        await update.message.reply_text("🔍 <b>Ищем собеседника...</b>\n\nОстановить поиск можно кнопкой /stop", parse_mode="HTML", reply_markup=get_main_keyboard())
+    # Запрашиваем, кого искать
+    await update.message.reply_text("🔍 <b>Кого вы хотите найти?</b>", parse_mode="HTML", reply_markup=search_preferences_kb())
 
 async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -174,12 +139,16 @@ async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     queue = load_queue()
     stopped = False
     
-    if user_id in queue:
-        queue.remove(user_id)
-        save_queue(queue)
-        await update.message.reply_text("⏹ <b>Поиск отменен.</b>", parse_mode="HTML", reply_markup=get_main_keyboard())
-        stopped = True
-        
+    # Ищем в очереди и удаляем
+    for i, q in enumerate(queue):
+        if q['id'] == user_id:
+            del queue[i]
+            save_queue(queue)
+            await update.message.reply_text("⏹ <b>Поиск отменен.</b>", parse_mode="HTML", reply_markup=get_main_keyboard())
+            stopped = True
+            break
+            
+    # Ищем в парах и удаляем
     if user_id in pairs:
         partner_id = pairs.pop(user_id)
         if partner_id in pairs:
@@ -199,37 +168,22 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     users = load_users()
     user = users.get(user_id, {})
+    gen_text = "👨 Парень" if user.get('gender') == 'M' else ("👩 Девушка" if user.get('gender') == 'F' else "Не указан")
+    
     await update.message.reply_text(
         f"🌌 <b>ТВОЙ DARK ПРОФИЛЬ</b>\n\n"
-        f"👑 Премиум: <code>{'Активен ✨' if user.get('premium') else 'Отсутствует ❌'}</code>\n"
-        f"💎 Баланс звезд: <code>{user.get('stars', 0)} ⭐</code>\n"
-        f"👥 Рефералов: <code>{user.get('referrals', 0)} чел.</code>",
+        f"⚧ Ваш пол: <b>{gen_text}</b>\n"
+        f"👥 Приглашено друзей: <code>{user.get('referrals', 0)} чел.</code>\n"
+        f"💖 Отправлено на поддержку: <code>{user.get('donated', 0)} ⭐</code>",
         parse_mode="HTML", reply_markup=get_main_keyboard()
     )
 
-async def cmd_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_donate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"⭐ <b>DARK PREMIUM</b>\n\n"
-        f"Цена: <b>50 внутренних звезд</b> на 7 дней\n"
-        f"Вы можете пополнить баланс через официальные Telegram Stars.",
-        parse_mode="HTML", reply_markup=premium_menu()
+        f"💖 <b>ПОДДЕРЖКА СОЗДАТЕЛЕЙ</b>\n\n"
+        f"Проект существует на энтузиазме! Если вам нравится бот, вы можете поддержать нас на любую сумму.",
+        parse_mode="HTML", reply_markup=donate_kb()
     )
-
-async def cmd_topup(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    prices = [LabeledPrice("50 Звезд", 50)]
-    await context.bot.send_invoice(
-        chat_id=chat_id,
-        title="Пополнение баланса (50 ⭐)",
-        description="Покупка внутренних звезд за официальные Telegram Stars",
-        payload="buy_50_stars",
-        provider_token="",
-        currency="XTR",
-        prices=prices
-    )
-
-async def cmd_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🎮 <b>Выберите игру:</b>", parse_mode="HTML", reply_markup=games_menu())
 
 async def cmd_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -243,17 +197,18 @@ async def cmd_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML", reply_markup=get_main_keyboard()
     )
 
-async def cmd_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📞 <b>Поддержка и предложения:</b>\n\n"
-        "Пишите в личку разработчику <b>@WHITEDARON</b> ваши идеи, что можно добавить или улучшить в боте!",
-        parse_mode="HTML", reply_markup=get_main_keyboard()
-    )
+async def cmd_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    pairs = load_pairs()
+    if user_id in pairs:
+        await update.message.reply_text("🎮 <b>Выберите игру для вызова собеседника:</b>", parse_mode="HTML", reply_markup=chat_games_kb())
+    else:
+        await update.message.reply_text("⚠️ Игры доступны только во время общения с собеседником!")
 
 async def cmd_about(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🌑 <b>DARK ANON CHAT</b>\n\n• Версия: <code>4.5 Premium</code>\n• Полная анонимность\n• Мгновенный поиск", parse_mode="HTML", reply_markup=get_main_keyboard())
+    await update.message.reply_text("🌑 <b>DARK ANON CHAT</b>\n\n• Версия: <code>5.0 Smart Match</code>\n• Умный подбор по полу\n• Игры в чате", parse_mode="HTML", reply_markup=get_main_keyboard())
 
-# ==================== ОПЛАТА TELEGRAM STARS ====================
+# ==================== ОПЛАТА ПОДДЕРЖКИ ====================
 async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.pre_checkout_query.answer(ok=True)
 
@@ -261,10 +216,12 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
     user_id = str(update.effective_user.id)
     users = load_users()
     user = users.get(user_id, {})
-    user['stars'] = user.get('stars', 0) + 50
+    amount = update.message.successful_payment.total_amount
+    
+    user['donated'] = user.get('donated', 0) + amount
     users[user_id] = user
     save_users(users)
-    await update.message.reply_text("🎉 <b>Оплата успешно прошла!</b>\nНа баланс зачислено 50 ⭐.", parse_mode="HTML", reply_markup=get_main_keyboard())
+    await update.message.reply_text(f"🎉 <b>Огромное спасибо за поддержку!</b> Вы пожертвовали {amount} ⭐.", parse_mode="HTML", reply_markup=get_main_keyboard())
 
 # ==================== ОБРАБОТКА ТЕКСТА И ФОТО ====================
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -272,24 +229,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     pairs = load_pairs()
     
-    # Перехват нажатий меню-кнопок и перевод их в вызовы команд
+    # Обработка команд из кнопок
     if text.startswith("/search"): await cmd_search(update, context); return
     elif text.startswith("/stop"): await cmd_stop(update, context); return
     elif text.startswith("/profile"): await cmd_profile(update, context); return
-    elif text.startswith("/premium"): await cmd_premium(update, context); return
+    elif text.startswith("/donate"): await cmd_donate(update, context); return
     elif text.startswith("/referrals"): await cmd_referrals(update, context); return
-    elif text.startswith("/games"): await cmd_games(update, context); return
-    elif text.startswith("/support"): await cmd_support(update, context); return
+    elif text.startswith("/game"): await cmd_game(update, context); return
     elif text.startswith("/about"): await cmd_about(update, context); return
 
-    # Если просто текст и пользователь в паре
     if user_id in pairs:
         partner_id = pairs[user_id]
         try:
-            await context.bot.send_message(chat_id=partner_id, text=f"💬 <b>Новое сообщение</b>\n\n{text}", parse_mode="HTML")
+            # ДОБАВЛЯЕМ ЗНАЧОК 💬 В КОНЦЕ СООБЩЕНИЯ
+            await context.bot.send_message(chat_id=partner_id, text=f"{text} 💬")
         except: await cmd_stop(update, context)
     else:
-        await update.message.reply_text("⚠️ <b>Вы не в диалоге!</b> Нажмите на кнопку <code>/search</code>, чтобы найти собеседника.", parse_mode="HTML", reply_markup=get_main_keyboard())
+        await update.message.reply_text("⚠️ <b>Вы не в диалоге!</b> Нажмите <code>/search</code>.", parse_mode="HTML", reply_markup=get_main_keyboard())
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -298,12 +254,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         partner_id = pairs[user_id]
         photo = update.message.photo[-1]
         try:
-            await context.bot.send_photo(chat_id=partner_id, photo=photo.file_id, caption="📸 <b>Новое фото</b>", parse_mode="HTML")
+            await context.bot.send_photo(chat_id=partner_id, photo=photo.file_id, caption="📸")
         except: await cmd_stop(update, context)
     else:
-        await update.message.reply_text("⚠️ Фотографии можно отправлять только во время активного диалога!", reply_markup=get_main_keyboard())
+        await update.message.reply_text("⚠️ Фотографии можно отправлять только во время активного диалога!")
 
-# ==================== ИНЛАЙН КНОПКИ ====================
+# ==================== ИНЛАЙН КНОПКИ И ПОИСК ====================
+def find_match(queue, user_id, user_gen, look_for):
+    for i, p in enumerate(queue):
+        if p['id'] == user_id: continue
+        
+        # Проверяем, подходит ли человек из очереди нашему юзеру
+        match1 = (look_for == 'any') or (look_for == p['gen'])
+        # Проверяем, подходит ли наш юзер человеку из очереди
+        match2 = (p['look'] == 'any') or (p['look'] == user_gen)
+        
+        if match1 and match2:
+            return queue.pop(i)
+    return None
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -312,80 +281,70 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = users.get(user_id, {})
     data = query.data
     
-    if data == "topup_balance":
-        prices = [LabeledPrice("50 Звезд", 50)]
-        await context.bot.send_invoice(chat_id=query.message.chat_id, title="Пополнение баланса (50 ⭐)", description="Покупка внутренних звезд за официальные Telegram Stars", payload="buy_50_stars", provider_token="", currency="XTR", prices=prices)
-    elif data == "buy_premium":
-        if user.get('stars', 0) >= 50:
-            user['stars'] -= 50
-            user['premium'] = True
-            user['premium_until'] = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-            users[user_id] = user
-            save_users(users)
-            await query.edit_message_text("⭐ <b>Премиум успешно активирован на 7 дней!</b>", parse_mode="HTML")
-        else:
-            await query.edit_message_text(f"❌ <b>Недостаточно средств.</b> Нужно 50 ⭐. У вас: {user.get('stars', 0)} ⭐\nПополните баланс командой /topup", parse_mode="HTML")
-    elif data == "game_tic":
-        game_id = f"tic_{user_id}_{int(datetime.now().timestamp())}"
-        board = [' '] * 9
-        context.user_data['tic_board'] = board
-        context.user_data['tic_game_id'] = game_id
-        await query.edit_message_text("❌ <b>Крестики-нолики</b>\nВаш ход:", parse_mode="HTML", reply_markup=tic_tac_toe_board(board, game_id))
-    elif data.startswith("tic_"):
-        parts = data.split("_")
-        if len(parts) == 3 and parts[1] != "none":
-            pos = int(parts[2])
-            board = context.user_data.get('tic_board', [' ']*9)
-            if board[pos] == ' ':
-                board[pos] = 'X'
-                if check_win(board, 'X'):
-                    user['stars'] = user.get('stars', 0) + 10
-                    users[user_id] = user
-                    save_users(users)
-                    await query.edit_message_text(f"🎉 <b>Победа!</b> +10 ⭐", parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Играть снова", callback_data="game_tic")],[InlineKeyboardButton("🔙 В игры", callback_data="back_games")]]))
-                    return
-                bot_move = get_best_move(board)
-                if bot_move is not None:
-                    board[bot_move] = 'O'
-                    if check_win(board, 'O'):
-                        await query.edit_message_text("😔 <b>Поражение.</b> Бот выиграл.", parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Попробовать снова", callback_data="game_tic")],[InlineKeyboardButton("🔙 В игры", callback_data="back_games")]]))
-                        return
-                context.user_data['tic_board'] = board
-                await query.edit_message_text("❌ <b>Ваш ход:</b>", parse_mode="HTML", reply_markup=tic_tac_toe_board(board, parts[1]))
-    elif data == "game_roulette":
-        await query.edit_message_text("🎰 <b>Рулетка (Ставка: 5 ⭐)</b>:", parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔴 Красный", callback_data="roulette_red")],[InlineKeyboardButton("⚫️ Черный", callback_data="roulette_black")],[InlineKeyboardButton("🟢 Зеленый", callback_data="roulette_green")],[InlineKeyboardButton("🔙 Назад", callback_data="back_games")]]))
-    elif data.startswith("roulette_"):
-        color = data.split("_")[1]
-        result = random.randint(0, 36)
-        result_color = "green" if result == 0 else ("red" if result % 2 == 0 else "black")
-        if color == result_color:
-            stars = 35 if color == "green" else 10
-            user['stars'] = user.get('stars', 0) + stars
-            msg = f"🎉 <b>Победа! Выпал {result_color.upper()}. +{stars} ⭐</b>"
-        else:
-            user['stars'] = max(0, user.get('stars', 0) - 5)
-            msg = f"😔 <b>Проигрыш. Выпало {result} ({result_color.upper()}). -5 ⭐</b>"
+    # 1. Установка пола
+    if data.startswith("setgen_"):
+        gender = data.split("_")[1]
+        user['gender'] = gender
         users[user_id] = user
         save_users(users)
-        await query.edit_message_text(f"{msg}\n💰 Баланс: {user['stars']} ⭐", parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Крутить еще", callback_data="game_roulette")],[InlineKeyboardButton("🔙 В игры", callback_data="back_games")]]))
-    elif data == "game_number":
-        buttons = [[InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(r, r+5)] for r in (1, 6)]
-        buttons.append([InlineKeyboardButton("🔙 Назад", callback_data="back_games")])
-        await query.edit_message_text("🎲 <b>Угадай число от 1 до 10 (Ставка: 3 ⭐):</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
-    elif data.startswith("num_"):
-        guess = int(data.split("_")[1])
-        number = random.randint(1, 10)
-        if guess == number:
-            user['stars'] = user.get('stars', 0) + 15
-            msg = f"🎉 <b>Угадал! Было {number}. +15 ⭐</b>"
+        gen_str = "Парнем" if gender == "M" else "Девушкой"
+        await query.edit_message_text(f"✅ Вы успешно зарегистрировались как: <b>{gen_str}</b>\nТеперь нажмите /search еще раз!", parse_mode="HTML")
+    
+    # 2. Логика поиска
+    elif data.startswith("look_"):
+        look_for = data.split("_")[1]
+        user_gen = user.get('gender')
+        pairs = load_pairs()
+        queue = load_queue()
+        
+        # Ищем совпадение
+        match = find_match(queue, user_id, user_gen, look_for)
+        
+        if match:
+            partner_id = match['id']
+            pairs[user_id] = partner_id
+            pairs[partner_id] = user_id
+            save_pairs(pairs)
+            save_queue(queue)
+            
+            success_msg = "🔮 <b>Собеседник найден! Приятного общения.</b>"
+            await query.edit_message_text(success_msg, parse_mode="HTML")
+            try:
+                await context.bot.send_message(chat_id=partner_id, text=success_msg, parse_mode="HTML")
+            except: pass
         else:
-            user['stars'] = max(0, user.get('stars', 0) - 3)
-            msg = f"😔 <b>Мимо. Загадано {number}. -3 ⭐</b>"
-        users[user_id] = user
-        save_users(users)
-        await query.edit_message_text(f"{msg}\n💰 Баланс: {user['stars']} ⭐", parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Еще раз", callback_data="game_number")],[InlineKeyboardButton("🔙 В игры", callback_data="back_games")]]))
-    elif data == "back_games":
-        await query.edit_message_text("🎮 <b>Выберите игру:</b>", parse_mode="HTML", reply_markup=games_menu())
+            # Очищаем старые заявки этого юзера и добавляем новую
+            queue = [q for q in queue if q['id'] != user_id]
+            queue.append({'id': user_id, 'gen': user_gen, 'look': look_for})
+            save_queue(queue)
+            await query.edit_message_text("🔍 <b>Ищем подходящего собеседника...</b>\n\nОстановить поиск можно кнопкой /stop", parse_mode="HTML")
+
+    # 3. Донат
+    elif data.startswith("donate_"):
+        amount = int(data.split("_")[1])
+        prices = [LabeledPrice(f"Поддержка {amount} Звезд", amount)]
+        await context.bot.send_invoice(chat_id=query.message.chat_id, title="Поддержка проекта", description=f"Отправить разработчикам {amount} Stars", payload="support_donate", provider_token="", currency="XTR", prices=prices)
+
+    # 4. Игры в чате
+    elif data.startswith("chatgame_"):
+        pairs = load_pairs()
+        if user_id in pairs:
+            partner_id = pairs[user_id]
+            game_type = data.split("_")[1]
+            emoji = "🎲" if game_type == "dice" else "🎯"
+            await query.edit_message_text(f"Вы отправили вызов {emoji} собеседнику!")
+            
+            # Отправляем анимацию обоим
+            await context.bot.send_message(chat_id=user_id, text="Ваш бросок:")
+            await context.bot.send_dice(chat_id=user_id, emoji=emoji)
+            
+            try:
+                await context.bot.send_message(chat_id=partner_id, text="Собеседник бросает вызов! Его бросок:")
+                await context.bot.send_dice(chat_id=partner_id, emoji=emoji)
+                await context.bot.send_message(chat_id=partner_id, text="Отправьте /game чтобы бросить в ответ!")
+            except: pass
+        else:
+            await query.edit_message_text("⚠️ Вы не в диалоге.")
 
 # ==================== СЕРВЕР ДЛЯ РЕНДЕРА ====================
 async def handle_ping(reader, writer):
@@ -409,11 +368,9 @@ async def run_bot():
     app.add_handler(CommandHandler("search", cmd_search))
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("profile", cmd_profile))
-    app.add_handler(CommandHandler("premium", cmd_premium))
-    app.add_handler(CommandHandler("topup", cmd_topup))
-    app.add_handler(CommandHandler("games", cmd_games))
+    app.add_handler(CommandHandler("donate", cmd_donate))
+    app.add_handler(CommandHandler("game", cmd_game))
     app.add_handler(CommandHandler("referrals", cmd_referrals))
-    app.add_handler(CommandHandler("support", cmd_support))
     app.add_handler(CommandHandler("about", cmd_about))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
@@ -441,3 +398,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
