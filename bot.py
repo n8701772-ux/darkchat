@@ -3,8 +3,8 @@ import os
 import logging
 import json
 import random
-import threading  # Добавили для параллельного запуска сервера
-from http.server import BaseHTTPRequestHandler, HTTPServer # Встроенный сервер, ничего скачивать не надо
+import asyncio  # Используем asyncio вместо threading
+from asyncio import start_server
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -430,35 +430,33 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard()
         )
 
-# ==================== ВЕБ-СЕРВЕР ДЛЯ UPTIME ROBOT ====================
-class PingServer(BaseHTTPRequestHandler):
-    def do_GET(self):
-        # Отвечаем 200 OK на любой запрос (включая / и /ping)
-        self.send_response(200)
-        self.send_header("Content-type", "text/html; charset=utf-8")
-        self.end_headers()
-        self.wfile.write("Бот активен! 🚀".encode("utf-8"))
+# ==================== АСИНХРОННЫЙ ВЕБ-СЕРВЕР ДЛЯ РЕНДЕРА ====================
+async def handle_ping(reader, writer):
+    """Обрабатывает запросы от Uptime Robot асинхронно"""
+    data = await reader.read(1024)
+    request = data.decode('utf-8', errors='ignore')
+    
+    # Формируем HTTP-ответ 200 OK
+    response = (
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/html; charset=utf-8\r\n"
+        "Connection: close\r\n\r\n"
+        "Бот активен! 🚀"
+    )
+    writer.write(response.encode('utf-8'))
+    await writer.drain()
+    writer.close()
+    await writer.wait_closed()
 
-    def log_message(self, format, *args):
-        # Отключаем лишний спам логов сервера в консоль Termux/Render
-        return
-
-def run_web_server():
-    # Render автоматически передает порт в переменную окружения PORT
+async def start_web_server():
     port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), PingServer)
-    logger.info(f"🌐 Веб-сервер запущен на порту {port}")
-    server.serve_forever()
+    server = await start_server(handle_ping, '0.0.0.0', port)
+    logger.info(f"🌐 Асинхронный веб-сервер запущен на порту {port}")
+    # Сервер будет работать в фоне внутри общего event loop-а
+    asyncio.create_task(server.serve_forever())
 
-# ==================== ЗАПУСК ====================
-def main():
-    print("🌑 DARK ANON CHAT ЗАПУЩЕН!")
-    print("⭐ БОТ РАБОТАЕТ!")
-    
-    # Запускаем пинг-сервер в отдельном потоке, чтобы он не мешал боту
-    web_thread = threading.Thread(target=run_web_server, daemon=True)
-    web_thread.start()
-    
+# ==================== ЗАПУСК БОТА ====================
+async def run_bot():
     app = Application.builder().token(TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
@@ -466,7 +464,29 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(button_callback))
     
-    app.run_polling()
+    # Инициализируем и запускаем бота
+    await app.initialize()
+    await app.updater.start_polling()
+    await app.start()
+    
+    logger.info("🌑 DARK ANON CHAT БОТ УСПЕШНО ЗАПУЩЕН!")
+    
+    # Держим цикл активным бесконечно
+    while True:
+        await asyncio.sleep(3600)
+
+def main():
+    print("🌑 DARK ANON CHAT СТАРТУЕТ...")
+    
+    # Создаем единый цикл событий для сервера и для бота
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    # Сначала вешаем веб-сервер в этот же цикл
+    loop.run_until_complete(start_web_server())
+    
+    # Затем запускаем самого бота
+    loop.run_until_complete(run_bot())
 
 if __name__ == "__main__":
     main()
