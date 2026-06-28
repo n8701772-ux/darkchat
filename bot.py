@@ -9,10 +9,10 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# ===== ТОКЕН БЕРЕТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ =====
+# ===== ТОКЕН БЕРЕТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ RENDER =====
 TOKEN = os.environ.get('BOT_TOKEN')
 if not TOKEN:
-    raise ValueError("❌ ОШИБКА: BOT_TOKEN не найден в переменных окружения!")
+    raise ValueError("❌ ОШИБКА: BOT_TOKEN не найден в переменных окружения RENDER")
 
 USERS_FILE = "dark_users.json"
 PAIRS_FILE = "dark_pairs.json"
