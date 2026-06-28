@@ -1,4 +1,5 @@
 
+
 import os
 import logging
 import json
@@ -164,9 +165,7 @@ def keep_alive():
     t.start()
     print("🌐 Веб-сервер запущен на порту 8080!")
 
-# ====================================================
-# ВСЕ ОБРАБОТЧИКИ БОТА (ОСТАЛИСЬ БЕЗ ИЗМЕНЕНИЙ)
-# ====================================================
+# ===== ОБРАБОТЧИКИ =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     users = load_users()
