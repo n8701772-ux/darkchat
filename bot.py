@@ -4,9 +4,10 @@ import logging
 import json
 import random
 import time
+import asyncio
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # ============================================
 # ТОКЕН БЕРЕТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ RENDER
@@ -132,7 +133,7 @@ def get_best_move(board):
     return None
 
 # ===== ОБРАБОТЧИКИ =====
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     users = load_users()
     
@@ -143,7 +144,7 @@ def start(update: Update, context: CallbackContext):
             users[ref_id]['premium'] = True
             users[ref_id]['premium_until'] = (datetime.now() + timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
             save_users(users)
-            context.bot.send_message(
+            await context.bot.send_message(
                 chat_id=ref_id,
                 text="🎉 Новый реферал! VIP на 6 часов активирован!",
                 parse_mode="HTML"
@@ -162,7 +163,7 @@ def start(update: Update, context: CallbackContext):
         }
         save_users(users)
         
-        update.message.reply_text(
+        await update.message.reply_text(
             f"🌑 ДОБРО ПОЖАЛОВАТЬ В DARK ANON CHAT!\n\n"
             f"🔮 Секретный анонимный чат\n"
             f"Здесь вы можете делать ВСЕ, ЧТО ЗАХОТИТЕ\n\n"
@@ -182,13 +183,13 @@ def start(update: Update, context: CallbackContext):
             reply_markup=get_main_keyboard()
         )
     else:
-        update.message.reply_text(
+        await update.message.reply_text(
             f"🌑 С возвращением!",
             parse_mode="HTML",
             reply_markup=get_main_keyboard()
         )
 
-def handle_text(update: Update, context: CallbackContext):
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = str(update.effective_user.id)
     users = load_users()
@@ -198,7 +199,7 @@ def handle_text(update: Update, context: CallbackContext):
     if user_id in pairs:
         partner_id = pairs[user_id]
         if partner_id in users:
-            context.bot.send_message(
+            await context.bot.send_message(
                 chat_id=partner_id,
                 text=f"💬 Новое сообщение от анонимного пользователя\n\n{text}",
                 parse_mode="HTML"
@@ -220,13 +221,13 @@ def handle_text(update: Update, context: CallbackContext):
             pairs[available] = user_id
             save_pairs(pairs)
             
-            update.message.reply_text("✅ Собеседник найден!")
-            context.bot.send_message(
+            await update.message.reply_text("✅ Собеседник найден!")
+            await context.bot.send_message(
                 chat_id=available,
                 text="✅ Собеседник найден!"
             )
         else:
-            update.message.reply_text(
+            await update.message.reply_text(
                 "🔍 Ищем собеседника...\nПока никого нет."
             )
     
@@ -237,16 +238,16 @@ def handle_text(update: Update, context: CallbackContext):
             if partner_id in pairs:
                 del pairs[partner_id]
             save_pairs(pairs)
-            update.message.reply_text("⏹ Диалог остановлен")
+            await update.message.reply_text("⏹ Диалог остановлен")
             try:
-                context.bot.send_message(
+                await context.bot.send_message(
                     chat_id=partner_id,
                     text="⏹ Собеседник покинул чат"
                 )
             except:
                 pass
         else:
-            update.message.reply_text("❌ Нет активного диалога")
+            await update.message.reply_text("❌ Нет активного диалога")
     
     elif text == "👤 Мой профиль":
         premium_status = "❌ Нет"
@@ -255,7 +256,7 @@ def handle_text(update: Update, context: CallbackContext):
             if until != 'none':
                 premium_status = f"✅ До {until}"
         
-        update.message.reply_text(
+        await update.message.reply_text(
             f"👤 Ваш профиль\n\n"
             f"⭐ Премиум: {premium_status}\n"
             f"💎 Звезд: {user.get('stars', 0)}\n"
@@ -264,7 +265,7 @@ def handle_text(update: Update, context: CallbackContext):
         )
     
     elif text == "⭐ Премиум":
-        update.message.reply_text(
+        await update.message.reply_text(
             f"⭐ Премиум DARK ANON CHAT\n\n"
             f"Цена: 50 Telegram Stars\n"
             f"Длительность: 7 дней\n\n"
@@ -277,7 +278,7 @@ def handle_text(update: Update, context: CallbackContext):
         )
     
     elif text == "👥 Рефералы":
-        update.message.reply_text(
+        await update.message.reply_text(
             f"👥 Рефералы\n\n"
             f"Ваших рефералов: {user.get('referrals', 0)}\n\n"
             f"🔗 Ваша ссылка:\n"
@@ -286,19 +287,19 @@ def handle_text(update: Update, context: CallbackContext):
         )
     
     elif text == "🎮 Игры":
-        update.message.reply_text(
+        await update.message.reply_text(
             "🎮 Выберите игру:",
             reply_markup=games_menu()
         )
     
     elif text == "📞 Поддержка":
-        update.message.reply_text(
+        await update.message.reply_text(
             "📞 Поддержка\n\n@WHITEDARON",
             parse_mode="HTML"
         )
     
     elif text == "ℹ️ О чате":
-        update.message.reply_text(
+        await update.message.reply_text(
             "🌑 DARK ANON CHAT\n\n"
             "Версия: 3.0.0\n"
             "Полная анонимность\n"
@@ -307,22 +308,22 @@ def handle_text(update: Update, context: CallbackContext):
             parse_mode="HTML"
         )
 
-def handle_photo(update: Update, context: CallbackContext):
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     pairs = load_pairs()
     
     if user_id in pairs:
         partner_id = pairs[user_id]
         photo = update.message.photo[-1]
-        context.bot.send_photo(
+        await context.bot.send_photo(
             chat_id=partner_id,
             photo=photo.file_id,
             caption="📸 Новое фото от анонимного пользователя"
         )
 
-def button_callback(update: Update, context: CallbackContext):
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
     user_id = str(query.from_user.id)
     users = load_users()
     user = users.get(user_id, {})
@@ -334,7 +335,7 @@ def button_callback(update: Update, context: CallbackContext):
         context.user_data['tic_board'] = board
         context.user_data['tic_game_id'] = game_id
         
-        query.edit_message_text(
+        await query.edit_message_text(
             "❌ Крестики-нолики\nВыберите клетку:",
             reply_markup=tic_tac_toe_board(board, game_id)
         )
@@ -354,7 +355,7 @@ def button_callback(update: Update, context: CallbackContext):
                         users[user_id] = user
                         save_users(users)
                         
-                        query.edit_message_text(
+                        await query.edit_message_text(
                             f"🎉 Вы победили! +{bonus} ⭐",
                             reply_markup=InlineKeyboardMarkup([
                                 [InlineKeyboardButton("🔄 Снова", callback_data="game_tic")],
@@ -367,7 +368,7 @@ def button_callback(update: Update, context: CallbackContext):
                     if bot_move is not None:
                         board[bot_move] = 'O'
                         if check_win(board, 'O'):
-                            query.edit_message_text(
+                            await query.edit_message_text(
                                 "😔 Вы проиграли",
                                 reply_markup=InlineKeyboardMarkup([
                                     [InlineKeyboardButton("🔄 Снова", callback_data="game_tic")],
@@ -377,13 +378,13 @@ def button_callback(update: Update, context: CallbackContext):
                             return
                     
                     context.user_data['tic_board'] = board
-                    query.edit_message_text(
+                    await query.edit_message_text(
                         "❌ Ваш ход:",
                         reply_markup=tic_tac_toe_board(board, parts[1])
                     )
     
     elif data == "game_roulette":
-        query.edit_message_text(
+        await query.edit_message_text(
             "🎰 Рулетка\nСтавка: 5 ⭐\nВыберите цвет:",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔴 Красный", callback_data="roulette_red")],
@@ -420,7 +421,7 @@ def button_callback(update: Update, context: CallbackContext):
         users[user_id] = user
         save_users(users)
         
-        query.edit_message_text(
+        await query.edit_message_text(
             f"🎰 Результат: {result}\n{result_text}\n⭐ {user['stars']}",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Снова", callback_data="game_roulette")],
@@ -429,7 +430,7 @@ def button_callback(update: Update, context: CallbackContext):
         )
     
     elif data == "game_number":
-        query.edit_message_text(
+        await query.edit_message_text(
             "🎲 Угадай число (1-10)\nСтавка: 3 ⭐",
             reply_markup=number_keyboard()
         )
@@ -448,7 +449,7 @@ def button_callback(update: Update, context: CallbackContext):
         users[user_id] = user
         save_users(users)
         
-        query.edit_message_text(
+        await query.edit_message_text(
             f"{result}\n⭐ {user['stars']}",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Снова", callback_data="game_number")],
@@ -464,48 +465,49 @@ def button_callback(update: Update, context: CallbackContext):
             users[user_id] = user
             save_users(users)
             
-            query.edit_message_text(
+            await query.edit_message_text(
                 f"⭐ Premium активирован!\nДо: {user['premium_until']}"
             )
         else:
-            query.edit_message_text(
+            await query.edit_message_text(
                 f"❌ Недостаточно звезд!\nНужно: {PREMIUM_PRICE}\nУ вас: {user.get('stars', 0)}"
             )
     
     elif data == "vip_referral":
-        query.edit_message_text(
+        await query.edit_message_text(
             f"👥 VIP за реферала\n\n"
             f"Пригласите друга:\n"
             f"https://t.me/{context.bot.username}?start=ref_{user_id}"
         )
     
     elif data == "back_games":
-        query.edit_message_text(
+        await query.edit_message_text(
             "🎮 Выберите игру:",
             reply_markup=games_menu()
         )
     
     elif data == "back_main":
-        query.edit_message_text(
+        await query.edit_message_text(
             "🌑 Главное меню",
             reply_markup=get_main_keyboard()
         )
 
 # ===== ЗАПУСК =====
-def main():
+async def main():
     print("🌑 DARK ANON CHAT запущен!")
     print("⭐ Бот работает!")
     
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    app = Application.builder().token(TOKEN).build()
     
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
-    dp.add_handler(MessageHandler(Filters.photo, handle_photo))
-    dp.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(CallbackQueryHandler(button_callback))
     
-    updater.start_polling()
-    updater.idle()
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
