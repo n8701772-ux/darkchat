@@ -1,5 +1,4 @@
 
-
 import os
 import logging
 import json
@@ -8,7 +7,7 @@ import time
 import asyncio
 import threading
 from datetime import datetime, timedelta
-from flask import Flask
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
@@ -136,36 +135,48 @@ def get_best_move(board):
     return None
 
 # ====================================================
-# ВЕБ-СЕРВЕР ДЛЯ 100% ЗАЩИТЫ ОТ ЗАСЫПАНИЯ
+# ПРОСТОЙ HTTP-СЕРВЕР (ЗАМЕНА FLASK)
 # ====================================================
-web_app = Flask(__name__)
-
-@web_app.route('/')
-def home():
-    return "🌑 DARK ANON CHAT is alive! Бот работает 24/7!"
-
-@web_app.route('/ping')
-def ping():
-    return "PONG! ✅", 200
-
-@web_app.route('/status')
-def status():
-    users = load_users()
-    return f"👥 Пользователей: {len(users)}", 200
+class KeepAliveHandler(BaseHTTPRequestHandler):
+    """Обрабатывает запросы к веб-серверу"""
+    
+    def do_GET(self):
+        """Ответ на GET запрос"""
+        if self.path == '/ping':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'PONG! ✅')
+        elif self.path == '/status':
+            users = load_users()
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(f'👥 Пользователей: {len(users)}'.encode())
+        else:
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            self.wfile.write(b'<h1>🌑 DARK ANON CHAT is alive!</h1><p>Бот работает 24/7!</p>')
+    
+    def log_message(self, format, *args):
+        """Отключаем логирование запросов (чтобы не засорять)"""
+        pass
 
 def run_web():
-    """Запускает веб-сервер для keep-alive"""
+    """Запускает HTTP-сервер для keep-alive"""
     port = int(os.environ.get('PORT', 8080))
-    web_app.run(host='0.0.0.0', port=port, debug=False)
+    server = HTTPServer(('0.0.0.0', port), KeepAliveHandler)
+    print(f"🌐 Веб-сервер запущен на порту {port}!")
+    server.serve_forever()
 
 def keep_alive():
     """Запускает веб-сервер в фоновом потоке"""
     t = threading.Thread(target=run_web)
     t.daemon = True
     t.start()
-    print("🌐 Веб-сервер запущен на порту 8080!")
 
-# ===== ОБРАБОТЧИКИ =====
+# ===== ОБРАБОТЧИКИ БОТА =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     users = load_users()
@@ -532,9 +543,9 @@ async def main():
     print("🌑 DARK ANON CHAT запущен!")
     print("⭐ Бот работает!")
     
-    # ЗАПУСКАЕМ ВЕБ-СЕРВЕР (ОТВЕЧАЕТ НА ЗАПРОСЫ)
+    # ЗАПУСКАЕМ HTTP-СЕРВЕР (РАБОТАЕТ НА ЛЮБОЙ ВЕРСИИ PYTHON)
     keep_alive()
-    print("✅ Веб-сервер запущен! Бот НЕ ЗАСНЕТ!")
+    print("✅ HTTP-сервер запущен! Бот НЕ ЗАСНЕТ!")
 
     app = Application.builder().token(TOKEN).build()
     
