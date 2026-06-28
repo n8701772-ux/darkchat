@@ -1,31 +1,36 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-
+import os
 import logging
 import json
-import os
 import random
 import time
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# ===== ТОКЕН БЕРЕТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ RENDER =====
+# ============================================
+# ТОКЕН БЕРЕТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ RENDER
+# ============================================
 TOKEN = os.environ.get('BOT_TOKEN')
 if not TOKEN:
-    raise ValueError("❌ ОШИБКА: BOT_TOKEN не найден в переменных окружения RENDER")
+    raise ValueError("❌ ОШИБКА: BOT_TOKEN не найден в переменных окружения Render!")
 
+# ===== НАСТРОЙКИ =====
 USERS_FILE = "dark_users.json"
 PAIRS_FILE = "dark_pairs.json"
-
 PREMIUM_PRICE = 50
 PREMIUM_DURATION_DAYS = 7
 
+# ===== ЛОГГИРОВАНИЕ =====
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
+# ===== БАЗЫ ДАННЫХ =====
 def load_users():
     if os.path.exists(USERS_FILE):
         with open(USERS_FILE, 'r', encoding='utf-8') as f:
@@ -46,6 +51,7 @@ def save_pairs(pairs):
     with open(PAIRS_FILE, 'w', encoding='utf-8') as f:
         json.dump(pairs, f, ensure_ascii=False, indent=2)
 
+# ===== КЛАВИАТУРЫ =====
 def get_main_keyboard():
     return ReplyKeyboardMarkup([
         ["🔍 Найти собеседника", "⏹ Остановить диалог"],
@@ -127,6 +133,7 @@ def get_best_move(board):
             return i
     return None
 
+# ===== ОБРАБОТЧИКИ =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     users = load_users()
@@ -486,18 +493,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard()
         )
 
+# ===== ЗАПУСК =====
 def main():
     print("🌑 DARK ANON CHAT запущен!")
     print("⭐ Бот работает!")
     
-    application = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).build()
     
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(CallbackQueryHandler(button_callback))
     
-    application.run_polling()
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
