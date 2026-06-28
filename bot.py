@@ -1,5 +1,4 @@
 
-
 import os
 import logging
 import json
@@ -136,7 +135,7 @@ def get_best_move(board):
     return None
 
 # ====================================================
-# HTTP SERVER FOR KEEP-ALIVE
+# HTTP SERVER FOR KEEP-ALIVE (100% PROTECTION)
 # ====================================================
 class KeepAliveHandler(BaseHTTPRequestHandler):
     
@@ -151,7 +150,7 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
             self.end_headers()
-            self.wfile.write(f'Users: {len(users)}'.encode())
+            self.wfile.write(f'Users online: {len(users)}'.encode())
         else:
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
@@ -164,13 +163,14 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
 def run_web():
     port = int(os.environ.get('PORT', 8080))
     server = HTTPServer(('0.0.0.0', port), KeepAliveHandler)
-    print(f"Web server started on port {port}!")
+    print(f"✅ Web server started on port {port}!")
     server.serve_forever()
 
 def keep_alive():
     t = threading.Thread(target=run_web)
     t.daemon = True
     t.start()
+    print("🌐 Keep-alive thread started!")
 
 # ====================================================
 # BOT HANDLERS
