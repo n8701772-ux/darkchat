@@ -7,6 +7,7 @@ import time
 import asyncio
 import threading
 from datetime import datetime, timedelta
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
@@ -133,14 +134,39 @@ def get_best_move(board):
             return i
     return None
 
-# ===== ФУНКЦИЯ ПИНГА (НЕ ДАЕТ ЗАСНУТЬ) =====
-def keep_alive():
-    """Простой пинг, чтобы бот не засыпал"""
-    while True:
-        time.sleep(300)  # Каждые 5 минут
-        print(f"🔄 Keep-alive ping at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+# ====================================================
+# ВЕБ-СЕРВЕР ДЛЯ 100% ЗАЩИТЫ ОТ ЗАСЫПАНИЯ
+# ====================================================
+web_app = Flask(__name__)
 
-# ===== ОБРАБОТЧИКИ =====
+@web_app.route('/')
+def home():
+    return "🌑 DARK ANON CHAT is alive! Бот работает 24/7!"
+
+@web_app.route('/ping')
+def ping():
+    return "PONG! ✅", 200
+
+@web_app.route('/status')
+def status():
+    users = load_users()
+    return f"👥 Пользователей: {len(users)}", 200
+
+def run_web():
+    """Запускает веб-сервер для keep-alive"""
+    port = int(os.environ.get('PORT', 8080))
+    web_app.run(host='0.0.0.0', port=port, debug=False)
+
+def keep_alive():
+    """Запускает веб-сервер в фоновом потоке"""
+    t = threading.Thread(target=run_web)
+    t.daemon = True
+    t.start()
+    print("🌐 Веб-сервер запущен на порту 8080!")
+
+# ====================================================
+# ВСЕ ОБРАБОТЧИКИ БОТА (ОСТАЛИСЬ БЕЗ ИЗМЕНЕНИЙ)
+# ====================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     users = load_users()
@@ -501,18 +527,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ====================================================
-# ЗАПУСК БОТА (С ПИНГОМ В ОТДЕЛЬНОМ ПОТОКЕ)
+# ЗАПУСК
 # ====================================================
 async def main():
     print("🌑 DARK ANON CHAT запущен!")
     print("⭐ Бот работает!")
+    
+    # ЗАПУСКАЕМ ВЕБ-СЕРВЕР (ОТВЕЧАЕТ НА ЗАПРОСЫ)
+    keep_alive()
+    print("✅ Веб-сервер запущен! Бот НЕ ЗАСНЕТ!")
 
-    # ЗАПУСКАЕМ ПИНГ В ОТДЕЛЬНОМ ПОТОКЕ
-    ping_thread = threading.Thread(target=keep_alive, daemon=True)
-    ping_thread.start()
-    print("🔄 Пинг запущен! Бот не заснет!")
-
-    # ЗАПУСКАЕМ БОТА
     app = Application.builder().token(TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
@@ -524,7 +548,6 @@ async def main():
     await app.start()
     await app.updater.start_polling()
     
-    # Бесконечное ожидание
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
