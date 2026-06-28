@@ -1,0 +1,31 @@
+# Файлы с данными пользователей
+*.json
+!render.yaml
+
+# Файлы с секретами
+*.env
+*.secret
+*.key
+
+# Системные файлы
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Файлы IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Логи
+*.log
+
+# Временные файлы
+*.tmp
+*.temp
+
+# Файлы Termux
+.DS_Store
+Thumbs.db
