@@ -3,6 +3,8 @@ import os
 import logging
 import json
 import random
+import threading  # Добавили для параллельного запуска сервера
+from http.server import BaseHTTPRequestHandler, HTTPServer # Встроенный сервер, ничего скачивать не надо
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -167,7 +169,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pairs = load_pairs()
     user = users.get(user_id, {})
     
-    # Пересылка сообщений
     if user_id in pairs:
         partner_id = pairs[user_id]
         if partner_id in users:
@@ -275,7 +276,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = users.get(user_id, {})
     data = query.data
     
-    # Крестики-нолики
     if data == "game_tic":
         game_id = f"tic_{user_id}_{int(datetime.now().timestamp())}"
         board = [' '] * 9
@@ -328,7 +328,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=tic_tac_toe_board(board, parts[1])
                     )
     
-    # Рулетка
     elif data == "game_roulette":
         await query.edit_message_text(
             "🎰 Рулетка\nСтавка: 5 ⭐",
@@ -375,7 +374,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
     
-    # Угадай число
     elif data == "game_number":
         await query.edit_message_text(
             "🎲 Угадай число (1-10)\nСтавка: 3 ⭐",
@@ -404,7 +402,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
     
-    # Премиум
     elif data == "buy_premium":
         if user.get('stars', 0) >= 50:
             user['stars'] = user.get('stars', 0) - 50
@@ -421,7 +418,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👥 VIP за реферала\n\nПригласите друга:\nhttps://t.me/{context.bot.username}?start=ref_{user_id}"
         )
     
-    # Навигация
     elif data == "back_games":
         await query.edit_message_text(
             "🎮 Выберите игру:",
@@ -434,10 +430,34 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard()
         )
 
+# ==================== ВЕБ-СЕРВЕР ДЛЯ UPTIME ROBOT ====================
+class PingServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Отвечаем 200 OK на любой запрос (включая / и /ping)
+        self.send_response(200)
+        self.send_header("Content-type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write("Бот активен! 🚀".encode("utf-8"))
+
+    def log_message(self, format, *args):
+        # Отключаем лишний спам логов сервера в консоль Termux/Render
+        return
+
+def run_web_server():
+    # Render автоматически передает порт в переменную окружения PORT
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), PingServer)
+    logger.info(f"🌐 Веб-сервер запущен на порту {port}")
+    server.serve_forever()
+
 # ==================== ЗАПУСК ====================
 def main():
     print("🌑 DARK ANON CHAT ЗАПУЩЕН!")
     print("⭐ БОТ РАБОТАЕТ!")
+    
+    # Запускаем пинг-сервер в отдельном потоке, чтобы он не мешал боту
+    web_thread = threading.Thread(target=run_web_server, daemon=True)
+    web_thread.start()
     
     app = Application.builder().token(TOKEN).build()
     
