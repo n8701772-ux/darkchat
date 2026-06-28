@@ -6,6 +6,8 @@ import random
 import time
 import asyncio
 from datetime import datetime, timedelta
+from flask import Flask
+from threading import Thread
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
@@ -132,7 +134,36 @@ def get_best_move(board):
             return i
     return None
 
-# ===== ОБРАБОТЧИКИ =====
+# ====================================================
+# ВЕБ-СЕРВЕР ДЛЯ ПОДДЕРЖАНИЯ АКТИВНОСТИ (НЕ ДАЕТ ЗАСНУТЬ)
+# ====================================================
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def home():
+    return "🌑 DARK ANON CHAT is alive! Бот работает 24/7!"
+
+@web_app.route('/ping')
+def ping():
+    return "PONG! ✅", 200
+
+@web_app.route('/status')
+def status():
+    users = load_users()
+    return f"👥 Пользователей: {len(users)}", 200
+
+def run_web():
+    """Запускает веб-сервер для keep-alive"""
+    port = int(os.environ.get('PORT', 8080))
+    web_app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    """Запускает веб-сервер в фоновом потоке"""
+    t = Thread(target=run_web)
+    t.daemon = True
+    t.start()
+
+# ===== ОБРАБОТЧИКИ БОТА =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     users = load_users()
@@ -492,11 +523,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard()
         )
 
-# ===== ЗАПУСК =====
+# ====================================================
+# ЗАПУСК БОТА С ВЕБ-СЕРВЕРОМ
+# ====================================================
 async def main():
     print("🌑 DARK ANON CHAT запущен!")
     print("⭐ Бот работает!")
-    
+
+    # ЗАПУСКАЕМ ВЕБ-СЕРВЕР (НЕ ДАЕТ ЗАСНУТЬ)
+    keep_alive()
+    print("🌐 Веб-сервер запущен на порту 8080!")
+    print("📡 Бот будет работать 24/7!")
+
+    # ЗАПУСКАЕМ БОТА
     app = Application.builder().token(TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
@@ -507,6 +546,8 @@ async def main():
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
+    
+    # Бесконечное ожидание
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
